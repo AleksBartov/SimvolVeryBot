@@ -1,10 +1,12 @@
 {
   "name": "simvolverybot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Бот для изучения Символа Веры",
+  "type": "module",
+  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js",
+    "dev": "nodemon app.js"
   },
   "repository": {
     "type": "git",
@@ -16,5 +18,14 @@
   "bugs": {
     "url": "https://github.com/AleksBartov/SimvolVeryBot/issues"
   },
-  "homepage": "https://github.com/AleksBartov/SimvolVeryBot#readme"
+  "homepage": "https://github.com/AleksBartov/SimvolVeryBot#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "telegraf": "^4.12.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
 }
