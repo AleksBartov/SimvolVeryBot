@@ -56,8 +56,6 @@ class NavigationHandler {
         
       case 1:
         await ctx.replyWithMarkdown(messages.creedPresentation);
-        
-        // Отправляем аудиозапись
         await ctx.replyWithMarkdown(messages.audioReady);
         
         try {
@@ -85,12 +83,37 @@ class NavigationHandler {
           this.getNavigationKeyboard(2)
         );
         break;
+
+      // НОВЫЙ ШАГ 3 - Введение в веру
+      case 3:
+        await ctx.replyWithMarkdown(
+          messages.faithIntroduction,
+          this.getNavigationKeyboard(3)
+        );
+        break;
+
+      // НОВЫЙ ШАГ 4 - Продолжение о вере
+      case 4:
+        await ctx.replyWithMarkdown(
+          messages.faithContinuation,
+          this.getNavigationKeyboard(4)
+        );
+        break;
         
       default:
         await ctx.replyWithMarkdown(
-          '🎉 *Отлично!* На этом этапе мы можем начать углубленное изучение Символа Веры.\n\n*Разработка продолжается...*',
+          `📖 *Продолжение следует...*
+
+*Следующие этапы изучения:*
+• 12 членов Символа веры
+• Объяснение сложных понятий
+• Вопросы для самопроверки
+• Цитаты святых отцов
+
+*Разработка продолжается...*`,
           Markup.inlineKeyboard([
-            Markup.button.callback('🔄 Начать сначала', 'restart')
+            [Markup.button.callback('🔄 Начать сначала', 'restart')],
+            [Markup.button.callback('📚 Изучить 1-й член', 'study_1')] // Заготовка для будущего
           ])
         );
     }
@@ -103,7 +126,7 @@ class NavigationHandler {
       buttons.push(Markup.button.callback('◀️ Назад', 'prev_step'));
     }
     
-    if (step < 3) {
+    if (step < 5) { // Увеличиваем до 5, так как добавили новые шаги
       buttons.push(Markup.button.callback('➡️ Далее', 'next_step'));
     }
     
