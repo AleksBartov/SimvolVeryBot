@@ -8,7 +8,7 @@ import { dirname, join } from 'path';
 
 import FlowHandler from './handlers/flowHandler.js';
 import NavigationHandler from './handlers/navigationHandler.js';
-import StartHandler from './handlers/startHandler.js';
+import startHandler from './handlers/startHandler.js';
 import NotificationService from './services/notificationService.js';
 import userService from './services/userService.js';
 
@@ -25,7 +25,6 @@ const flowConfig = JSON.parse(
 // Инициализация обработчиков
 const flowHandler = new FlowHandler(flowConfig);
 const navigationHandler = new NavigationHandler(flowHandler);
-const startHandler = new StartHandler();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
