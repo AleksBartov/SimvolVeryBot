@@ -1,11 +1,31 @@
+
 import { Telegraf } from 'telegraf';
 import express from 'express';
 import dotenv from 'dotenv';
-import startHandler from './handlers/startHandler.js';
-import navigationHandler from './handlers/navigationHandler.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+import FlowHandler from './handlers/flowHandler.js';
+import NavigationHandler from './handlers/navigationHandler.js';
+import StartHandler from './handlers/startHandler.js';
 import NotificationService from './services/notificationService.js';
+import userService from './services/userService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 dotenv.config();
+
+// Загрузка конфигурации потока
+const flowConfig = JSON.parse(
+  readFileSync(join(__dirname, 'data', 'flow.json'), 'utf-8')
+);
+
+// Инициализация обработчиков
+const flowHandler = new FlowHandler(flowConfig);
+const navigationHandler = new NavigationHandler(flowHandler);
+const startHandler = new StartHandler();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
@@ -15,16 +35,22 @@ const notificationService = new NotificationService(bot);
 notificationService.startDailyChecks();
 
 // Обработчики
-bot.start((ctx) => startHandler.handleStart(ctx));
+bot.start((ctx) => startHandler.handleStart(ctx, flowHandler));
 bot.action('next_step', (ctx) => navigationHandler.handleNextStep(ctx));
 bot.action('prev_step', (ctx) => navigationHandler.handlePrevStep(ctx));
-bot.action('restart', (ctx) => startHandler.handleStart(ctx));
+bot.action('restart', (ctx) => startHandler.handleStart(ctx, flowHandler));
 
-// Обработчик ВСЕХ текстовых сообщений (кроме команд)
+// Обработка ответов на тесты
+bot.action(/quiz_answer_(\d+)_(\d+)/, async (ctx) => {
+  const questionIndex = parseInt(ctx.match[1]);
+  const answerIndex = parseInt(ctx.match[2]);
+  await flowHandler.handleQuizAnswer(ctx, questionIndex, answerIndex);
+});
+
+// Обработчик всех текстовых сообщений
 bot.on('text', async (ctx) => {
-  // Показываем alert-сообщение
   await ctx.replyWithMarkdown(
-    '⚠️ *Для работы с ботом используйте кнопки навигации "Далее" или "Назад"*',
+    '⚠️ *Для работы с ботом используйте кнопки навигации*',
     {
       reply_markup: {
         inline_keyboard: [
@@ -35,41 +61,10 @@ bot.on('text', async (ctx) => {
   );
 });
 
-// Обработчик ВСЕХ медиа-файлов
+// Обработчик медиа-файлов
 bot.on(['photo', 'video', 'audio', 'document', 'voice', 'sticker'], async (ctx) => {
   await ctx.replyWithMarkdown(
-    '⚠️ *Для работы с ботом используйте кнопки навигации "Далее" или "Назад"*',
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔄 Начать сначала', callback_data: 'restart' }]
-        ]
-      }
-    }
-  );
-});
-
-// Обработчик ВСЕХ остальных типов сообщений
-bot.on('message', async (ctx) => {
-  await ctx.replyWithMarkdown(
-    '⚠️ *Для работы с ботом используйте кнопки навигации "Далее" или "Назад"*',
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔄 Начать сначала', callback_data: 'restart' }]
-        ]
-      }
-    }
-  );
-});
-
-// Обработчик ВСЕХ неизвестных callback_data
-bot.on('callback_query', async (ctx) => {
-  // Отвечаем на callback_query чтобы убрать "часики"
-  await ctx.answerCbQuery();
-  
-  await ctx.replyWithMarkdown(
-    '⚠️ *Неизвестная команда. Для работы с ботом используйте кнопки навигации*',
+    '⚠️ *Для работы с ботом используйте кнопки навигации*',
     {
       reply_markup: {
         inline_keyboard: [
@@ -82,9 +77,7 @@ bot.on('callback_query', async (ctx) => {
 
 // Глобальный обработчик ошибок
 bot.catch((err, ctx) => {
-  console.error(`❌ Global error for ${ctx.updateType}:`, err);
-  
-  // Пытаемся отправить сообщение об ошибке пользователю
+  console.error(`❌ Global error:`, err);
   ctx.replyWithMarkdown(
     '⚠️ *Произошла непредвиденная ошибка*',
     {
@@ -94,19 +87,18 @@ bot.catch((err, ctx) => {
         ]
       }
     }
-  ).catch(e => {
-    console.error('Even error message failed:', e);
-  });
+  );
 });
 
 // Запуск бота
 bot.launch().then(() => {
   console.log('🤖 Бот запущен!');
+  console.log(`📊 Загружено ${flowHandler.getTotalSteps()} шагов обучения`);
 }).catch(err => {
   console.error('❌ Failed to launch bot:', err);
 });
 
-// Express для веб-хуков
+// Express сервер
 app.use(express.json());
 app.get('/', (req, res) => {
   res.send('Бот для изучения Символа Веры активен!');
@@ -117,20 +109,5 @@ app.listen(process.env.PORT || 3000, () => {
 });
 
 // Элегантное завершение работы
-process.once('SIGINT', () => {
-  console.log('🛑 Bot stopping (SIGINT)');
-  bot.stop('SIGINT');
-});
-process.once('SIGTERM', () => {
-  console.log('🛑 Bot stopping (SIGTERM)');
-  bot.stop('SIGTERM');
-});
-
-// Обработчик необработанных исключений
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-});
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));

@@ -1,13 +1,11 @@
 import userService from '../services/userService.js';
-import messages from '../data/messages.js';
 import { Markup } from 'telegraf';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 class NavigationHandler {
+  constructor(flowHandler) {
+    this.flowHandler = flowHandler;
+  }
+
   async handleNextStep(ctx) {
     const userId = ctx.from.id;
     
@@ -15,10 +13,16 @@ class NavigationHandler {
       const user = await userService.getUser(userId);
       const nextStep = user.current_step + 1;
       
+      console.log(`🔄 [Navigation] User ${userId}: ${user.current_step} → ${nextStep}`);
+      
       await userService.updateUserStep(userId, nextStep);
       await this.deleteMessage(ctx);
       
-      await this.sendStepContent(ctx, nextStep);
+      const handled = await this.flowHandler.handleStep(ctx, nextStep);
+      
+      if (!handled) {
+        await this.showCompletionMessage(ctx);
+      }
       
     } catch (error) {
       console.error('Error in next step:', error);
@@ -33,10 +37,16 @@ class NavigationHandler {
       const user = await userService.getUser(userId);
       const prevStep = Math.max(0, user.current_step - 1);
       
+      console.log(`🔙 [Navigation] User ${userId}: ${user.current_step} → ${prevStep}`);
+      
       await userService.updateUserStep(userId, prevStep);
       await this.deleteMessage(ctx);
       
-      await this.sendStepContent(ctx, prevStep);
+      const handled = await this.flowHandler.handleStep(ctx, prevStep);
+      
+      if (!handled) {
+        await this.showCompletionMessage(ctx);
+      }
       
     } catch (error) {
       console.error('Error in prev step:', error);
@@ -44,102 +54,22 @@ class NavigationHandler {
     }
   }
 
-  async sendStepContent(ctx, step) {
-    switch (step) {
-      case 0:
-        await ctx.replyWithMarkdown(messages.welcome);
-        await ctx.replyWithMarkdown(
-          messages.readyPrompt,
-          this.getNavigationKeyboard(0)
-        );
-        break;
-        
-      case 1:
-        await ctx.replyWithMarkdown(messages.creedPresentation);
-        await ctx.replyWithMarkdown(messages.audioReady);
-        
-        try {
-          const audioPath = join(__dirname, '../data/audio/SimvolVery.ogg');
-          await ctx.replyWithAudio(
-            { source: audioPath },
-            {
-              caption: '🎵 Символ веры',
-              ...this.getNavigationKeyboard(1)
-            }
-          );
-        } catch (audioError) {
-          console.error('Error sending audio:', audioError);
-          await ctx.replyWithMarkdown(
-            '❌ Не удалось загрузить аудиозапись. Продолжаем с текстовой версии.',
-            this.getNavigationKeyboard(1)
-          );
-        }
-        break;
-        
-      case 2:
-        await ctx.replyWithMarkdown(messages.afterCreedText);
-        await ctx.replyWithMarkdown(
-          messages.studyInvitation,
-          this.getNavigationKeyboard(2)
-        );
-        break;
-
-      // НОВЫЙ ШАГ 3 - Введение в веру
-      case 3:
-        await ctx.replyWithMarkdown(
-          messages.faithIntroduction,
-          this.getNavigationKeyboard(3)
-        );
-        break;
-
-      // НОВЫЙ ШАГ 4 - Продолжение о вере
-      case 4:
-        await ctx.replyWithMarkdown(
-          messages.faithContinuation,
-          this.getNavigationKeyboard(4)
-        );
-        break;
-        
-      default:
-        await ctx.replyWithMarkdown(
-          `📖 *Продолжение следует...*
-
-*Следующие этапы изучения:*
-• 12 членов Символа веры
-• Объяснение сложных понятий
-• Вопросы для самопроверки
-• Цитаты святых отцов
-
-*Разработка продолжается...*`,
-          Markup.inlineKeyboard([
-            [Markup.button.callback('🔄 Начать сначала', 'restart')],
-            [Markup.button.callback('📚 Изучить 1-й член', 'study_1')] // Заготовка для будущего
-          ])
-        );
-    }
-  }
-
-  getNavigationKeyboard(step) {
-    const buttons = [];
-    
-    if (step > 0) {
-      buttons.push(Markup.button.callback('◀️ Назад', 'prev_step'));
-    }
-    
-    if (step < 5) { // Увеличиваем до 5, так как добавили новые шаги
-      buttons.push(Markup.button.callback('➡️ Далее', 'next_step'));
-    }
-    
-    return Markup.inlineKeyboard(buttons);
+  async showCompletionMessage(ctx) {
+    await ctx.replyWithMarkdown(
+      `📖 *Обучение завершено!*\n\nВы прошли все доступные на данный момент материалы.\n\n*Следующие этапы в разработке:*\n• Углубленное изучение членов Символа веры\n• Практические задания\n• Встречи с духовником`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🔄 Начать сначала', 'restart')]
+      ])
+    );
   }
 
   async deleteMessage(ctx) {
     try {
       await ctx.deleteMessage();
     } catch (error) {
-      // Игнорируем ошибки удаления сообщения
+      // Игнорируем ошибки удаления
     }
   }
 }
 
-export default new NavigationHandler();
+export default NavigationHandler;
