@@ -1,48 +1,82 @@
-
-// core/ProgressManager.js
+// core/ProgressManager.js (предыдущая версия)
 const Course = require('../data/course');
 
 class ProgressManager {
   constructor() {
-    this.userStates = new Map(); // user_id -> UserState
+    this.userStates = new Map();
   }
 
   getUserState(userId) {
     if (!this.userStates.has(userId)) {
       this.userStates.set(userId, {
         userId: userId,
-        currentBlockIndex: -1, // Начинаем с -1, чтобы первый next дал блок 0
+        currentBlockId: null,
+        previousBlockId: null,
         correctAnswers: 0,
         totalQuizzes: 0,
         isInFinalTest: false,
-        finalTestScore: 0,
-        finalTestIndex: 0
+        finalTestScore: 0
       });
     }
     return this.userStates.get(userId);
   }
 
-  getNextBlock(userId) {
+  startCourse(userId) {
+    const state = this.getUserState(userId);
+    state.currentBlockId = Course.presentation.firstBlockId;
+    state.previousBlockId = null;
+    state.isInFinalTest = false;
+    state.correctAnswers = 0;
+    state.totalQuizzes = 0;
+    state.finalTestScore = 0;
+    return this.getCurrentBlock(userId);
+  }
+
+  getCurrentBlock(userId) {
     const state = this.getUserState(userId);
     
+    if (!state.currentBlockId) {
+      return null;
+    }
+
     if (state.isInFinalTest) {
-      // Финальный тест
-      if (state.finalTestIndex >= Course.finalTest.length) {
-        return { type: 'final_test_completed' };
-      }
-      const block = Course.finalTest[state.finalTestIndex];
-      state.finalTestIndex++;
-      return block;
+      return Course.finalTest[state.currentBlockId] || null;
+    } else {
+      return Course.blocks[state.currentBlockId] || null;
     }
+  }
 
-    // Основной курс
-    state.currentBlockIndex++;
+  goNext(userId) {
+    const state = this.getUserState(userId);
+    const currentBlock = this.getCurrentBlock(userId);
     
-    if (state.currentBlockIndex >= Course.blocks.length) {
-      return { type: 'course_completed' };
+    if (!currentBlock || !currentBlock.next) {
+      return null;
     }
 
-    return Course.blocks[state.currentBlockIndex];
+    state.previousBlockId = state.currentBlockId;
+    state.currentBlockId = currentBlock.next;
+
+    return this.getCurrentBlock(userId);
+  }
+
+  goBack(userId) {
+    const state = this.getUserState(userId);
+    
+    if (!state.previousBlockId) {
+      return null;
+    }
+
+    const temp = state.currentBlockId;
+    state.currentBlockId = state.previousBlockId;
+    state.previousBlockId = temp;
+
+    return this.getCurrentBlock(userId);
+  }
+
+  canGoBack(userId) {
+    const state = this.getUserState(userId);
+    return !!state.previousBlockId;
   }
 
   handleQuizAnswer(userId, isCorrect) {
@@ -56,6 +90,15 @@ class ProgressManager {
     return isCorrect;
   }
 
+  startFinalTest(userId) {
+    const state = this.getUserState(userId);
+    state.isInFinalTest = true;
+    state.currentBlockId = 'final_test_start';
+    state.previousBlockId = null;
+    state.finalTestScore = 0;
+    return this.getCurrentBlock(userId);
+  }
+
   handleFinalTestAnswer(userId, isCorrect) {
     const state = this.getUserState(userId);
     
@@ -66,27 +109,19 @@ class ProgressManager {
     return state.finalTestScore;
   }
 
-  startFinalTest(userId) {
-    const state = this.getUserState(userId);
-    state.isInFinalTest = true;
-    state.finalTestIndex = 0;
-    return this.getNextBlock(userId);
-  }
-
   getProgressStats(userId) {
     const state = this.getUserState(userId);
-    const progress = state.isInFinalTest ? 100 : Math.round((state.currentBlockIndex / Course.blocks.length) * 100);
+    const progress = state.isInFinalTest ? 100 : 50;
     
     return {
       correctAnswers: state.correctAnswers,
       totalQuizzes: state.totalQuizzes,
       progress: progress,
       finalTestScore: state.finalTestScore,
-      totalFinalQuestions: Course.finalTest.length
+      totalFinalQuestions: Object.keys(Course.finalTest).length - 1
     };
   }
 
-  // Сброс прогресса (для тестирования)
   resetProgress(userId) {
     this.userStates.delete(userId);
   }
