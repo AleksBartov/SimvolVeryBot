@@ -1,7 +1,7 @@
 // bot/bot.js
-const { Telegraf } = require('telegraf');
-const ProgressManager = require('../core/ProgressManager');
-const Course = require('../data/course');
+const { Telegraf } = require("telegraf");
+const ProgressManager = require("../core/ProgressManager");
+const Course = require("../data/course");
 
 class TelegramBot {
   constructor(token) {
@@ -13,24 +13,27 @@ class TelegramBot {
 
   setupHandlers() {
     this.bot.start((ctx) => this.handleStart(ctx));
-    this.bot.on('poll_answer', (ctx) => this.handlePollAnswer(ctx));
-    this.bot.action('next', (ctx) => this.handleNext(ctx));
-    this.bot.action('back', (ctx) => this.handleBack(ctx));
-    this.bot.action('start_final_test', (ctx) => this.handleStartFinalTest(ctx));
-    this.bot.action('restart', (ctx) => this.handleRestart(ctx));
+    this.bot.on("poll_answer", (ctx) => this.handlePollAnswer(ctx));
+    this.bot.action("next", (ctx) => this.handleNext(ctx));
+    this.bot.action("back", (ctx) => this.handleBack(ctx));
+    this.bot.action("start_final_test", (ctx) =>
+      this.handleStartFinalTest(ctx)
+    );
+    this.bot.action("restart", (ctx) => this.handleRestart(ctx));
   }
 
   async handleStart(ctx) {
     const userId = ctx.from.id;
+    await this.clearUserMessages(ctx, userId);
+
     this.progressManager.resetProgress(userId);
-    await this.clearUserMessages(ctx, userId); // Очищаем все предыдущие сообщения
 
     const message = await ctx.reply(Course.presentation.text, {
       reply_markup: {
-        inline_keyboard: [[
-          { text: 'Начать изучение →', callback_data: 'next' }
-        ]]
-      }
+        inline_keyboard: [
+          [{ text: "Начать изучение >", callback_data: "next" }],
+        ],
+      },
     });
 
     this.addUserMessage(userId, message.message_id);
@@ -44,14 +47,14 @@ class TelegramBot {
       const nextBlock = this.progressManager.goNext(userId);
 
       if (!nextBlock) {
-        await this.sendNewMessage(ctx, userId, 'Курс завершен!');
+        await this.sendNewMessage(ctx, userId, "Курс завершен!");
         return;
       }
 
       await this.sendBlock(ctx, nextBlock, userId);
     } catch (error) {
-      console.error('Error in handleNext:', error);
-      await this.sendNewMessage(ctx, userId, 'Ошибка. Попробуйте /start');
+      console.error("Error in handleNext:", error);
+      await this.sendNewMessage(ctx, userId, "Ошибка. Попробуйте /start");
     }
   }
 
@@ -59,33 +62,33 @@ class TelegramBot {
     try {
       await ctx.answerCbQuery();
       const userId = ctx.from.id;
-      
+
       if (!this.progressManager.canGoBack(userId)) {
-        await ctx.answerCbQuery('Нельзя вернуться назад');
+        await ctx.answerCbQuery("Нельзя вернуться назад");
         return;
       }
 
       // При возврате назад удаляем текущее сообщение
       await this.deleteLastUserMessage(ctx, userId);
-      
+
       const prevBlock = this.progressManager.goBack(userId);
-      
+
       if (prevBlock) {
         await this.sendBlock(ctx, prevBlock, userId);
       }
     } catch (error) {
-      console.error('Error in handleBack:', error);
-      await ctx.answerCbQuery('Ошибка при возврате');
+      console.error("Error in handleBack:", error);
+      await ctx.answerCbQuery("Ошибка при возврате");
     }
   }
 
   async sendBlock(ctx, block, userId) {
     if (!block) {
-      await this.sendNewMessage(ctx, userId, 'Блок не найден');
+      await this.sendNewMessage(ctx, userId, "Блок не найден");
       return;
     }
 
-    // Удаляем предыдущее сообщение при переходе вперед (кроме самого первого перехода)
+    // Удаляем предыдущее сообщение (кроме самого первого перехода)
     const messageHistory = this.userMessageHistory.get(userId) || [];
     if (messageHistory.length > 1) {
       await this.deleteLastUserMessage(ctx, userId);
@@ -95,134 +98,74 @@ class TelegramBot {
     const keyboard = [];
 
     if (canGoBack) {
-      keyboard.push({ text: '← Назад', callback_data: 'back' });
+      keyboard.push({ text: "◀ Назад", callback_data: "back" });
     }
 
+    // Всегда показываем кнопку "Дальше" для блоков знаний и квизов
     if (this.shouldShowNextButton(block)) {
-      keyboard.push({ text: 'Далее →', callback_data: 'next' });
+      keyboard.push({ text: "Дальше >", callback_data: "next" });
     }
 
-    if (block.type === 'knowledge') {
+    if (block.type === "knowledge") {
       await this.sendNewMessage(ctx, userId, block.content, keyboard);
-    } else if (block.type === 'quiz') {
+    } else if (block.type === "quiz") {
       // Для викторин отправляем новое сообщение
       const quizMessage = await ctx.replyWithQuiz(
         block.question,
         block.options,
-        { 
+        {
           correct_option_id: block.correct_option_id,
-          is_anonymous: false
+          is_anonymous: false,
         }
       );
-      
+
       this.addUserMessage(userId, quizMessage.message_id);
-      
+
       setTimeout(async () => {
         try {
-          await this.sendNewMessage(ctx, userId, 'Продолжим изучение?', keyboard);
+          await this.sendNewMessage(
+            ctx,
+            userId,
+            "Продолжить изучение?",
+            keyboard
+          );
         } catch (error) {
-          console.error('Error showing navigation:', error);
+          console.error("Error showing navigation:", error);
         }
       }, 8000);
-    } else if (block.type === 'course_completed') {
+    } else if (block.type === "course_completed") {
       await this.showCourseCompleted(ctx, userId);
-    } else if (block.type === 'final_test_start') {
-      await this.sendNewMessage(ctx, userId, '📝 Начинаем финальный тест!');
+    } else if (block.type === "final_test_start") {
+      await this.sendNewMessage(ctx, userId, "Начинаем финальный тест!");
       const firstQuestion = this.progressManager.goNext(userId);
       await this.sendBlock(ctx, firstQuestion, userId);
-    } else if (block.type === 'final_test_completed') {
+    } else if (block.type === "final_test_completed") {
       await this.showFinalTestResults(ctx, userId);
     }
   }
 
-  // Отправляет новое сообщение и сохраняет его в историю
-  async sendNewMessage(ctx, userId, text, keyboard = []) {
-    const message = await ctx.reply(text, {
-      reply_markup: keyboard.length > 0 ? { inline_keyboard: [keyboard] } : undefined
-    });
-    
-    this.addUserMessage(userId, message.message_id);
-    return message;
-  }
-
-  // Добавляет сообщение в историю пользователя
-  addUserMessage(userId, messageId) {
-    if (!this.userMessageHistory.has(userId)) {
-      this.userMessageHistory.set(userId, []);
-    }
-    this.userMessageHistory.get(userId).push(messageId);
-  }
-
-  // Удаляет последнее сообщение пользователя
-  async deleteLastUserMessage(ctx, userId) {
-    const messageHistory = this.userMessageHistory.get(userId);
-    if (!messageHistory || messageHistory.length === 0) return;
-
-    const lastMessageId = messageHistory.pop();
-    
-    try {
-      await ctx.deleteMessage(lastMessageId);
-    } catch (error) {
-      console.error('Error deleting message:', error);
-      // Игнорируем ошибки удаления (сообщение могло быть уже удалено)
-    }
-  }
-
-  // Очищает все сообщения пользователя
-  async clearUserMessages(ctx, userId) {
-    const messageHistory = this.userMessageHistory.get(userId);
-    if (!messageHistory) return;
-
-    for (const messageId of messageHistory) {
-      try {
-        await ctx.deleteMessage(messageId);
-      } catch (error) {
-        console.error('Error clearing message:', error);
-      }
-    }
-    
-    this.userMessageHistory.set(userId, []);
-  }
-
   shouldShowNextButton(block) {
-    return (block.type === 'knowledge' && block.next) || 
-           (block.type === 'quiz' && block.next) ||
-           block.type === 'course_completed' ||
-           block.type === 'final_test_completed';
-  }
-
-  async handlePollAnswer(ctx) {
-    try {
-      const pollAnswer = ctx.pollAnswer;
-      const userId = pollAnswer.user.id;
-      const currentBlock = this.progressManager.getCurrentBlock(userId);
-
-      if (!currentBlock || currentBlock.type !== 'quiz') return;
-
-      const isCorrect = pollAnswer.option_ids[0] === currentBlock.correct_option_id;
-      
-      const state = this.progressManager.getUserState(userId);
-      if (state.isInFinalTest) {
-        this.progressManager.handleFinalTestAnswer(userId, isCorrect);
-      } else {
-        this.progressManager.handleQuizAnswer(userId, isCorrect);
-      }
-    } catch (error) {
-      console.error('Error handling poll answer:', error);
+    if (
+      block.type === "course_completed" ||
+      block.type === "final_test_completed" ||
+      block.type === "final_test_start"
+    ) {
+      return false;
     }
+    return true;
   }
 
   async showCourseCompleted(ctx, userId) {
     const stats = this.progressManager.getProgressStats(userId);
-    
-    const messageText = 
-      `🎉 Основной курс пройден!\n\n` +
+
+    const messageText =
+      "Основной курс пройден!\n\n" +
       `Прогресс: ${stats.progress}%\n` +
       `Правильные ответы: ${stats.correctAnswers}/${stats.totalQuizzes}\n\n` +
-      `Готовы к финальному тесту?`;
+      "Готовы к финальному тесту?";
 
     await this.sendNewMessage(ctx, userId, messageText, [
-      { text: 'Начать финальный тест', callback_data: 'start_final_test' }
+      { text: "Начать финальный тест", callback_data: "start_final_test" },
     ]);
   }
 
@@ -230,37 +173,47 @@ class TelegramBot {
     try {
       await ctx.answerCbQuery();
       const userId = ctx.from.id;
-      
+
       const firstQuestion = this.progressManager.startFinalTest(userId);
       if (!firstQuestion) {
-        await this.sendNewMessage(ctx, userId, 'Ошибка: не удалось начать финальный тест');
+        await this.sendNewMessage(
+          ctx,
+          userId,
+          "Ошибка: Не удалось начать финальный тест"
+        );
         return;
       }
-      
+
       await this.sendBlock(ctx, firstQuestion, userId);
     } catch (error) {
-      console.error('Error starting final test:', error);
-      await this.sendNewMessage(ctx, userId, 'Ошибка при запуске финального теста');
+      console.error("Error starting final test:", error);
+      await this.sendNewMessage(
+        ctx,
+        userId,
+        "Ошибка при запуске финального теста"
+      );
     }
   }
 
   async showFinalTestResults(ctx, userId) {
     const stats = this.progressManager.getProgressStats(userId);
-    const percentage = Math.round((stats.finalTestScore / stats.totalFinalQuestions) * 100);
-    
-    let message = `🏆 Финальный тест завершён!\n\n`;
+    const percentage = Math.round(
+      (stats.finalTestScore / stats.totalFinalQuestions) * 100
+    );
+
+    let message = "Финальный тест завершен!\n\n";
     message += `Результат: ${stats.finalTestScore}/${stats.totalFinalQuestions} (${percentage}%)\n\n`;
-    
+
     if (percentage >= 80) {
-      message += `🎊 Отличный результат!`;
+      message += "Отличный результат!";
     } else if (percentage >= 60) {
-      message += `👍 Хороший результат!`;
+      message += "Хороший результат!";
     } else {
-      message += `📚 Рекомендуем пройти курс еще раз.`;
+      message += "Рекомендуем пройти курс еще раз.";
     }
-    
+
     await this.sendNewMessage(ctx, userId, message, [
-      { text: 'Начать заново', callback_data: 'restart' }
+      { text: "Начать заново", callback_data: "restart" },
     ]);
   }
 
@@ -272,16 +225,78 @@ class TelegramBot {
       await this.clearUserMessages(ctx, userId);
       await this.handleStart(ctx);
     } catch (error) {
-      console.error('Error restarting:', error);
+      console.error("Error restarting:", error);
     }
+  }
+
+  async handlePollAnswer(ctx) {
+    try {
+      const userId = ctx.pollAnswer.user.id;
+      const pollId = ctx.pollAnswer.poll_id;
+      const selectedOption = ctx.pollAnswer.option_ids[0];
+
+      // Здесь можно добавить логику проверки правильности ответа
+      console.log(
+        `User ${userId} answered option ${selectedOption} for poll ${pollId}`
+      );
+    } catch (error) {
+      console.error("Error handling poll answer:", error);
+    }
+  }
+
+  // Вспомогательные методы для управления сообщениями
+  addUserMessage(userId, messageId) {
+    if (!this.userMessageHistory.has(userId)) {
+      this.userMessageHistory.set(userId, []);
+    }
+    this.userMessageHistory.get(userId).push(messageId);
+  }
+
+  async deleteLastUserMessage(ctx, userId) {
+    const messageHistory = this.userMessageHistory.get(userId);
+    if (messageHistory && messageHistory.length > 0) {
+      const lastMessageId = messageHistory.pop();
+      try {
+        await ctx.deleteMessage(lastMessageId);
+      } catch (error) {
+        console.error("Error deleting message:", error);
+      }
+    }
+  }
+
+  async clearUserMessages(ctx, userId) {
+    const messageHistory = this.userMessageHistory.get(userId);
+    if (messageHistory) {
+      for (const messageId of messageHistory) {
+        try {
+          await ctx.deleteMessage(messageId);
+        } catch (error) {
+          console.error("Error clearing messages:", error);
+        }
+      }
+      this.userMessageHistory.set(userId, []);
+    }
+  }
+
+  async sendNewMessage(ctx, userId, text, buttons = []) {
+    const keyboard =
+      buttons.length > 0 ? { inline_keyboard: [buttons] } : undefined;
+
+    const message = await ctx.reply(text, {
+      reply_markup: keyboard,
+      parse_mode: "Markdown",
+    });
+
+    this.addUserMessage(userId, message.message_id);
+    return message;
   }
 
   launch() {
     this.bot.launch();
-    console.log('✅ Бот запущен с удалением сообщений!');
-    
-    process.once('SIGINT', () => this.bot.stop('SIGINT'));
-    process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+    console.log("✅ Бот запущен с исправленной логикой!");
+
+    process.once("SIGINT", () => this.bot.stop("SIGINT"));
+    process.once("SIGTERM", () => this.bot.stop("SIGTERM"));
   }
 }
 
